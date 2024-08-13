@@ -1,4 +1,7 @@
+#include <GL/glew.h>
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_opengl.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -19,11 +22,15 @@
 #define _RELATIVE_HEIGHT _WINDOW_HEIGHT * _SCALE_FACTOR  
 #define _CALCS_PER_FRAME 10
 
+#define GL_GLEXT_PROTOTYPES 1
+#define GL_SILENCE_DEPRECATION
+
 typedef struct Point {
 	double x, y;
 	double vx, vy;
 	double mass;
 	double fx, fy;
+	double r, g, b, a;
 } Point;
 
 typedef struct QuadTree {
@@ -37,8 +44,138 @@ typedef struct QuadTree {
 } QuadTree;
 
 SDL_Window *window = NULL;
-SDL_Renderer *renderer = NULL;
 bool show_grid = false;
+SDL_GLContext glContext = NULL;
+GLuint shaderProgram, vbo, vao;
+
+const char* vertexShaderSource = 
+    "#version 330 core\n"
+    "layout (location = 0) in vec2 aPos;\n"
+    "void main() {\n"
+    "    gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0);\n"
+    "}\0";
+
+const char* fragmentShaderSource = 
+    "#version 330 core\n"
+    "out vec4 FragColor;\n"
+    "void main() {\n"
+    "    FragColor = vec4(1.0, 0.0, 0.0, 1.0);\n"
+    "}\0";
+
+bool initSDL()
+{
+
+	if (SDL_Init(SDL_INIT_VIDEO) < 0 )
+	{
+		printf("SDL COULD NOT INIT:\t%s\n",SDL_GetError());
+		return false;
+	}
+
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,3);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,3);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+
+	window = SDL_CreateWindow("Quad Tree", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, _WINDOW_WIDTH, _WINDOW_HEIGHT, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
+	if (window == NULL)
+	{
+		printf("WINDOW CANT BE MADE:\t%s\n", SDL_GetError());
+		return false;
+	}
+
+	SDL_GLContext glContext = SDL_GL_CreateContext(window);
+	if (glContext == NULL)
+	{
+		printf("OpenGl Could not be created! SDL ERROR:\t%s\n", SDL_GetError());
+		return false;
+	}
+	return true;
+}
+
+bool initGlew()
+{
+	glewExperimental = GL_TRUE;
+	GLenum glewError = glewInit();
+	if (glewError != GLEW_OK)
+	{
+		printf("Error INIT GLEW! SDL ERROR:\t%s\n", SDL_GetError());
+		return false;
+	}
+	return true;
+}
+
+GLuint compileShader(const char* source, GLenum type)
+{
+	GLuint shader = glCreateShader(type);
+	glShaderSource(shader, 1, &source, NULL);
+	glCompileShader(shader);
+
+	GLint success;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+	if (!success)
+	{
+		char infoLog[512];
+		glGetShaderInfoLog(shader, 512, NULL, infoLog);
+		printf("Shader complication error:\t%s\n", infoLog);
+		return 0;
+	}
+	return shader;
+}
+
+
+bool initOpenGL()
+{
+	GLuint vertexShader = compileShader(vertexShaderSource, GL_VERTEX_SHADER);
+	GLuint fragmentShader = compileShader(fragmentShaderSource, GL_FRAGMENT_SHADER);
+	
+	shaderProgram = glCreateProgram();
+	glAttachShader(shaderProgram, vertexShader);
+	glAttachShader(shaderProgram, fragmentShader);
+	glLinkProgram(shaderProgram);
+
+	GLint success;
+	glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+	if (!success)
+	{
+		char infoLog[512];
+		glGetShaderInfoLog(shaderProgram, 512, NULL, infoLog);
+		printf("ShaderProgram complication error:\t%s\n", infoLog);
+		return false;
+	}
+	
+	glDeleteShader(vertexShader);
+	glDeleteShader(fragmentShader);
+
+	float vertices[] =
+	{
+		0.0f, 0.0f
+	};
+
+	glGenVertexArrays(1, &vao);
+	glGenBuffers(1, &vbo);
+
+	glBindVertexArray(vao);
+
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2*sizeof(float), (void*)0);
+	glEnableVertexAttribArray(0);
+
+	glBindBuffer(GL_ARRAY_BUFFER,0);
+	glBindVertexArray(0);
+
+	return true;
+}
+
+void cleanup()
+{
+	glDeleteVertexArrays(1, &vao);
+	glDeleteBuffers(1, &vbo);
+	glDeleteProgram(shaderProgram);
+	SDL_GL_DeleteContext(glContext);
+	SDL_DestroyWindow(window);
+	SDL_Quit();
+}
 
 void printQuadTreeInfo(QuadTree *qt, int depth) {
     for (int i = 0; i < depth; i++) printf("  ");
@@ -80,20 +217,26 @@ void drawQuadTree(QuadTree *qt)
 {
 	if (show_grid)
 	{
-		SDL_SetRenderDrawColor(renderer, 255,255,255,255);
-		SDL_Rect rect = {(int)qt->x / _SCALE_FACTOR, 
-										 (int)qt->y / _SCALE_FACTOR, 
-										 (int)qt->width / _SCALE_FACTOR,
-										 (int)qt->height/ _SCALE_FACTOR};
-		SDL_RenderDrawRect(renderer, &rect);
+		//SDL_SetRenderDrawColor(renderer, 255,255,255,255);
+		//SDL_Rect rect = {(int)qt->x / _SCALE_FACTOR, 
+		//								 (int)qt->y / _SCALE_FACTOR, 
+		//								 (int)qt->width / _SCALE_FACTOR,
+		//								 (int)qt->height/ _SCALE_FACTOR};
+		//SDL_RenderDrawRect(renderer, &rect);
 	}
+
+	glUseProgram(shaderProgram);
+	glBindVertexArray(vao);
 
 	for (int i = 0; i < qt->point_count; i++)
 	{
-		SDL_SetRenderDrawColor(renderer, 255,0,0,255);
-		SDL_Rect point_rect = {((int)qt->points[i]->x /_SCALE_FACTOR) - 2, ((int)qt->points[i]->y / _SCALE_FACTOR) - 2, 4, 4};
-		SDL_RenderFillRect(renderer, &point_rect);
-		//printf("Drawing point at (%f, %f)\n", qt->points[i]->x, qt->points[i]->y);
+		float x = (qt->points[i]->x / _RELATIVE_WIDTH)*2 - 1;
+		float y = (qt->points[i]->y / _RELATIVE_HEIGHT)*2 - 1;
+		float point[] = {x, y};
+		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(point), point);
+
+		glDrawArrays(GL_POINTS, 0, 1);
 	}
 
 	if (qt->children[0] != NULL)
@@ -308,23 +451,12 @@ void updatePos(QuadTree *qt)
 }
 
 
-int main()
+int main(int argc, char* args[])
 {
-	if (SDL_Init(SDL_INIT_VIDEO) < 0 )
+	if (!initSDL() || !initGlew() || !initOpenGL())
 	{
-		printf("SDL COULD NOT INIT:\t%s\n",SDL_GetError());
-	}
-
-	window = SDL_CreateWindow("Quad Tree", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, _WINDOW_WIDTH, _WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
-	if (window == NULL)
-	{
-		printf("WINDOW CANT BE MADE:\t%s\n", SDL_GetError());
-	}
-
-	renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-	if(renderer == NULL)
-	{
-		printf("RENDERER FAILED:\t%s:\n",SDL_GetError());
+		cleanup();
+		return 1;
 	}
 
 	QuadTree* root = createQuadTree(0,0, _WINDOW_WIDTH * _SCALE_FACTOR, _WINDOW_HEIGHT*_SCALE_FACTOR);
@@ -398,8 +530,6 @@ int main()
 			updatePos(root);
 		}
 
-		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-		SDL_RenderClear(renderer);
 
     printf("QuadTree structure before drawing:\n");
     printQuadTreeInfo(root, 0);
@@ -408,8 +538,6 @@ int main()
 
 		drawQuadTree(root);
 
-		SDL_RenderPresent(renderer);
-		SDL_Delay(10);
 		//static int iterations = 0;
 		//printf("ITERATIONS:\t%i\n", iterations);
     //if (++iterations > 3) break;
@@ -421,8 +549,6 @@ int main()
         freePoint(allPoints[i]);
   }
   free(allPoints);
-	SDL_DestroyRenderer(renderer);
-	SDL_DestroyWindow(window);
-	SDL_Quit();
+	cleanup();
 	return 0;
 }
