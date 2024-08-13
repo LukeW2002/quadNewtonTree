@@ -5,14 +5,14 @@
 #include <omp.h>
 #include <math.h>
 
-#define _MAX_POINTS 1
+#define _MAX_POINTS 2
 #define _TOTAL_MEMORY_POINTS 10000
 #define _WINDOW_WIDTH 800
 #define _WINDOW_HEIGHT 600
 #define _G 0.1
 #define _SCALE_FACTOR 1
 #define _TIME_STEP 0.0001
-#define _AMOUNT_OF_BALLS 400
+#define _AMOUNT_OF_BALLS 1600
 #define _SOFTENING 4
 
 #define _RELATIVE_WIDTH _WINDOW_WIDTH * _SCALE_FACTOR
@@ -38,6 +38,7 @@ typedef struct QuadTree {
 
 SDL_Window *window = NULL;
 SDL_Renderer *renderer = NULL;
+bool show_grid = false;
 
 void printQuadTreeInfo(QuadTree *qt, int depth) {
     for (int i = 0; i < depth; i++) printf("  ");
@@ -61,14 +62,31 @@ void printQuadTreeInfo(QuadTree *qt, int depth) {
         }
     }
 }
+
+void handleKeyPress(SDL_KeyboardEvent *event)
+{
+	if (event->type == SDL_KEYDOWN)
+	{
+		switch (event->keysym.sym)
+		{
+			case SDLK_SPACE:
+				show_grid = !show_grid;
+				break;
+		}
+	}
+}
+
 void drawQuadTree(QuadTree *qt)
 {
-	SDL_SetRenderDrawColor(renderer, 255,255,255,255);
-	SDL_Rect rect = {(int)qt->x / _SCALE_FACTOR, 
-									 (int)qt->y / _SCALE_FACTOR, 
-									 (int)qt->width / _SCALE_FACTOR,
-									 (int)qt->height/ _SCALE_FACTOR};
-	SDL_RenderDrawRect(renderer, &rect);
+	if (show_grid)
+	{
+		SDL_SetRenderDrawColor(renderer, 255,255,255,255);
+		SDL_Rect rect = {(int)qt->x / _SCALE_FACTOR, 
+										 (int)qt->y / _SCALE_FACTOR, 
+										 (int)qt->width / _SCALE_FACTOR,
+										 (int)qt->height/ _SCALE_FACTOR};
+		SDL_RenderDrawRect(renderer, &rect);
+	}
 
 	for (int i = 0; i < qt->point_count; i++)
 	{
@@ -316,7 +334,7 @@ int main()
 	Point *centralBody = (Point*)malloc(sizeof(Point));
 	centralBody->x = ( _WINDOW_WIDTH) * _SCALE_FACTOR /2 ;
 	centralBody->y = ( _WINDOW_HEIGHT) * _SCALE_FACTOR /2;
-	centralBody->vx = 0;
+	centralBody->vx = 1000;
 	centralBody->vy = 0;
 	centralBody->mass = 1e10;
 	centralBody->fx = 0;
@@ -356,6 +374,10 @@ int main()
 			{
 				quit = true;
 			} 
+			else if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP)
+			{
+				handleKeyPress(&e.key);
+			}
 		} 
 
 		clearQuadTree(root);
