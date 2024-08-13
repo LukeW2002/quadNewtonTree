@@ -11,7 +11,7 @@
 #define _WINDOW_HEIGHT 600
 #define _G 6.64730e-11
 #define _SCALE_FACTOR 1
-#define _TIME_STEP 0.001
+#define _TIME_STEP 0.0001
 
 typedef struct Point {
 	double x, y;
@@ -125,52 +125,44 @@ void insert(QuadTree *qt, Point *p)
 		return;
 	
 	}
+
 	qt->total_mass += p->mass;
   qt->cmX = (qt->cmX * (qt->total_mass - p->mass) + p->x * p->mass) / qt->total_mass;
   qt->cmY = (qt->cmY * (qt->total_mass - p->mass) + p->y * p->mass) / qt->total_mass;
+	
+	
 	if (qt->point_count < _MAX_POINTS && qt->children[0] == NULL)
 	{
 		qt->points[qt->point_count++] = p;
-		printf("HELLO\t1\n");
 		return;
 	}
+
 	if (qt->children[0] == NULL)
 	{
-		if (qt->point_count < _MAX_POINTS)
-		{
-			printf("HELLO\t2\n");
-			qt->points[qt->point_count++] = p;
-		}
-		else
-		{
-			subdivide(qt);
-			for (int i = 0; i< qt->point_count; i++)
-			{
-				for (int j = 0; j < 4; j++)
-				{
-					insert(qt->children[j],qt->points[i]);
-				}
-			}
+		subdivide(qt);
 
+		for (int i = 0; i < qt->point_count; i++)
+		{
 			for (int j = 0; j < 4; j++)
 			{
-				if (isInBounds(qt->children[j],p))
+				if (isInBounds(qt->children[j], qt->points[i]))
 				{
-					insert(qt->children[j], p);
+					insert(qt->children[j], qt->points[i]);
 					break;
 				}
 			}
-
 		}
 	}
-	else
+
+	for (int i = 0; i<4; i++)
 	{
-		for (int i = 0; i < 4; i++) 
+		if (isInBounds(qt->children[i], p))
 		{
-  	  insert(qt->children[i], p);
+			insert(qt->children[i], p);
 			break;
 		}
 	}
+
 }
 
 void freePoint(Point *p)
@@ -305,7 +297,7 @@ int main()
 	Point** allPoints = malloc(100 * sizeof(Point*));
 	int pointCount = 0;
 
-	for (int i = 0; i < 40; ++i) {
+	for (int i = 0; i < 400; ++i) {
 		Point *p = (Point*)malloc(sizeof(Point));
 		p->x = (rand() % _WINDOW_WIDTH) * _SCALE_FACTOR;
 		p->y = (rand() % _WINDOW_HEIGHT) * _SCALE_FACTOR;
@@ -344,25 +336,6 @@ int main()
 		for (int i = 0; i < pointCount; ++i) {
 			calcForce(allPoints[i], root, 0.5);
 		}
-
-		//for (int i = 0; i < pointCount; ++i) {
-		//	printf("Reinserting point at (%f, %f)\n", root->points[i]->x, root->points[i]->y);
-		//	insert(root, allPoints[i]);
-		//}
-		//for (int i = 0; i < pointCount; i++)
-		//{
-		//	calcForce(root->points[i], root, 0.5);
-		//}
-		//for (int i = 0; i < 4; i++)
-		//{
-		//	if (root->children[i])
-		//	{
-		//		for (int j = 0; j < root->children[i]->point_count; ++j) {
-		//			
-		//			calcForce(root->children[i]->points[j], root, 0.5);
-		//		}
-		//	}
-		//}
 
 		updatePos(root);
 
