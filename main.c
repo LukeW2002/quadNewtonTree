@@ -5,16 +5,18 @@
 
 #include <math.h>
 
-#define _MAX_POINTS 1
+#define _MAX_POINTS 2
 #define _TOTAL_MEMORY_POINTS 10000
 #define _WINDOW_WIDTH 800
 #define _WINDOW_HEIGHT 600
-#define _G 100
+#define _G 0.1
 #define _SCALE_FACTOR 1
 #define _TIME_STEP 0.0001
-#define _AMOUNT_OF_BALLS 400
+#define _AMOUNT_OF_BALLS 40
 #define _SOFTENING 4
 
+#define _RELATIVE_WIDTH _WINDOW_WIDTH * _SCALE_FACTOR
+#define _RELATIVE_HEIGHT _WINDOW_HEIGHT * _SCALE_FACTOR  
 #define _CALCS_PER_FRAME 10
 
 typedef struct Point {
@@ -234,9 +236,9 @@ void calcForce(Point *p, QuadTree *qt, double theta)
 	double distance = sqrt(dx * dx + dy * dy + _SOFTENING * _SOFTENING);
 	if (((qt->width / distance < theta) || qt->children[0] == NULL))
 	{
-		if (distance > 0 && qt->point_count > 1)
+		if (distance > 0 && qt->point_count > 0)
 		{
-			double f = -1*_G*p->mass * qt->total_mass / (distance * distance * distance);
+			double f = _G*p->mass * qt->total_mass / (distance * distance * distance);
 			p-> fx += f * dx;
 			p-> fy += f * dy;
 
@@ -269,10 +271,16 @@ void updatePos(QuadTree *qt)
 			p->vy += (p->fy /p->mass) *_TIME_STEP;
 			p->x += p->vx *_TIME_STEP;
 			p->y += p->vy *_TIME_STEP; 		
-			p->x = fmod(p->x, _WINDOW_WIDTH * _SCALE_FACTOR);
-      p->y = fmod(p->y, _WINDOW_HEIGHT * _SCALE_FACTOR);
-      if (p->x < 0) p->x += _WINDOW_WIDTH * _SCALE_FACTOR;
-      if (p->y < 0) p->y += _WINDOW_HEIGHT * _SCALE_FACTOR;
+			if (p->x <= 0 || p->x >= _RELATIVE_WIDTH )
+			{
+				p->vx = -p->vx;
+				p->x = p->x <= 0 ? 0 : _RELATIVE_WIDTH;
+			}
+			if (p->y <= 0 || p->y >= _RELATIVE_HEIGHT )
+			{
+				p->vy = -p->vy;
+				p->y = p->y <= 0 ? 0 : _RELATIVE_HEIGHT;
+			}
 			p->fx = 0;
 			p->fy = 0;
 		}
