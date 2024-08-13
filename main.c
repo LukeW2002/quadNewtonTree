@@ -5,13 +5,17 @@
 
 #include <math.h>
 
-#define _MAX_POINTS 4
+#define _MAX_POINTS 1
 #define _TOTAL_MEMORY_POINTS 10000
 #define _WINDOW_WIDTH 800
 #define _WINDOW_HEIGHT 600
-#define _G 6.64730e-11
+#define _G 100
 #define _SCALE_FACTOR 1
 #define _TIME_STEP 0.0001
+#define _AMOUNT_OF_BALLS 400
+#define _SOFTENING 4
+
+#define _CALCS_PER_FRAME 10
 
 typedef struct Point {
 	double x, y;
@@ -227,17 +231,18 @@ void calcForce(Point *p, QuadTree *qt, double theta)
 	double dx= qt->cmX - p->x;
 	double dy= qt->cmY - p->y;
 
-	double distance = sqrt(dx * dx + dy * dy);
-	if (((qt->width / distance < theta && qt->total_mass / (distance * distance) ) || qt->children[0] == NULL))
+	double distance = sqrt(dx * dx + dy * dy + _SOFTENING * _SOFTENING);
+	if (((qt->width / distance < theta) || qt->children[0] == NULL))
 	{
-		if (distance > 0)
+		if (distance > 0 && qt->point_count > 1)
 		{
-			double f = -_G*p->mass * qt->total_mass / (distance * distance * distance);
-			p-> fx += f * dx/distance;
-			p-> fy += f * dy/distance;
+			double f = -1*_G*p->mass * qt->total_mass / (distance * distance * distance);
+			p-> fx += f * dx;
+			p-> fy += f * dy;
+
 		}
 	}
-	else
+	else if (qt->children[0] != NULL)
 	{
 		for ( int i = 0; i < 4; i++)
 		{
@@ -245,6 +250,7 @@ void calcForce(Point *p, QuadTree *qt, double theta)
 		}
 	}
 }
+
 void updatePos(QuadTree *qt)
 {
 	if (qt->children[0] != NULL)
@@ -294,18 +300,36 @@ int main()
 	}
 
 	QuadTree* root = createQuadTree(0,0, _WINDOW_WIDTH * _SCALE_FACTOR, _WINDOW_HEIGHT*_SCALE_FACTOR);
-	Point** allPoints = malloc(100 * sizeof(Point*));
+	Point** allPoints = malloc(_AMOUNT_OF_BALLS * sizeof(Point*));
 	int pointCount = 0;
 
-	for (int i = 0; i < 400; ++i) {
+	Point *centralBody = (Point*)malloc(sizeof(Point));
+	centralBody->x = ( _WINDOW_WIDTH) * _SCALE_FACTOR /2 ;
+	centralBody->y = ( _WINDOW_HEIGHT) * _SCALE_FACTOR /2;
+	centralBody->vx = 0;
+	centralBody->vy = 0;
+	centralBody->mass = 1e10;
+	centralBody->fx = 0;
+	centralBody->fy = 0;
+	insert(root, centralBody);
+	allPoints[pointCount++] = centralBody;
+	
+
+	for (int i = 0; i < _AMOUNT_OF_BALLS; ++i) {
 		Point *p = (Point*)malloc(sizeof(Point));
-		p->x = (rand() % _WINDOW_WIDTH) * _SCALE_FACTOR;
-		p->y = (rand() % _WINDOW_HEIGHT) * _SCALE_FACTOR;
-		p->vx = (rand() % 50) * 200;
-		p->vy = (rand() % 50) * 200;
-		p->mass = (rand() % 100) * 1e11;
+		double angle = ((double)rand() / RAND_MAX) * M_PI;
+		double radius = ((double)rand() / RAND_MAX) * _WINDOW_WIDTH * _SCALE_FACTOR /2;
+		p->x = centralBody->x + radius*cos(angle);
+		p->y = centralBody->y + radius*sin(angle);
+
+		double speed = sqrt(_G*centralBody->mass/radius);
+		p->vx = -speed * sin(angle);
+		p->vy = speed * cos(angle);
+
+		p->mass = (rand() % 100 + 1)*1e3;
 		p->fx = 0;
 		p->fy = 0;
+
 		insert(root, p);
 		allPoints[pointCount++] = p;
 	}
@@ -332,13 +356,13 @@ int main()
 		for (int i = 0; i < pointCount; ++i) {
 			insert(root, allPoints[i]);
 		}
-
-		for (int i = 0; i < pointCount; ++i) {
-			calcForce(allPoints[i], root, 0.5);
+		for (int i = 0; i < _CALCS_PER_FRAME; i++)
+		{
+			for (int i = 0; i < pointCount; ++i) {
+				calcForce(allPoints[i], root, 0.5);
+			}
+			updatePos(root);
 		}
-
-		updatePos(root);
-
 
 		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
 		SDL_RenderClear(renderer);
