@@ -2,17 +2,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-
+#include <omp.h>
 #include <math.h>
 
-#define _MAX_POINTS 2
+#define _MAX_POINTS 1
 #define _TOTAL_MEMORY_POINTS 10000
 #define _WINDOW_WIDTH 800
 #define _WINDOW_HEIGHT 600
 #define _G 0.1
 #define _SCALE_FACTOR 1
 #define _TIME_STEP 0.0001
-#define _AMOUNT_OF_BALLS 40
+#define _AMOUNT_OF_BALLS 400
 #define _SOFTENING 4
 
 #define _RELATIVE_WIDTH _WINDOW_WIDTH * _SCALE_FACTOR
@@ -239,7 +239,9 @@ void calcForce(Point *p, QuadTree *qt, double theta)
 		if (distance > 0 && qt->point_count > 0)
 		{
 			double f = _G*p->mass * qt->total_mass / (distance * distance * distance);
+			#pragma omp atomic
 			p-> fx += f * dx;
+			#pragma omp atomic
 			p-> fy += f * dy;
 
 		}
@@ -364,6 +366,8 @@ int main()
 		for (int i = 0; i < pointCount; ++i) {
 			insert(root, allPoints[i]);
 		}
+		
+		#pragma omp parallel for schedule(guided)
 		for (int i = 0; i < _CALCS_PER_FRAME; i++)
 		{
 			for (int i = 0; i < pointCount; ++i) {
