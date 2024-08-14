@@ -8,15 +8,15 @@
 #include <omp.h>
 #include <math.h>
 
-#define _MAX_POINTS 10
+#define _MAX_POINTS 20
 #define _TOTAL_MEMORY_POINTS 10000
-#define _WINDOW_WIDTH 800
-#define _WINDOW_HEIGHT 600
-#define _G 0.1
+#define _WINDOW_WIDTH 1376
+#define _WINDOW_HEIGHT 900
+#define _G 0.01
 #define _SCALE_FACTOR 1
 #define _TIME_STEP 0.0001
-#define _AMOUNT_OF_BALLS 1600
-#define _SOFTENING 4
+#define _AMOUNT_OF_BALLS 450
+#define _SOFTENING 10
 
 #define _RELATIVE_WIDTH _WINDOW_WIDTH * _SCALE_FACTOR
 #define _RELATIVE_HEIGHT _WINDOW_HEIGHT * _SCALE_FACTOR  
@@ -26,10 +26,10 @@
 #define GL_SILENCE_DEPRECATION
 
 typedef struct Point {
-	double x, y;
-	double vx, vy;
-	double mass;
-	double fx, fy;
+	long double x, y;
+	long double vx, vy;
+	long double mass;
+	long double fx, fy;
 	double r, g, b, a;
 } Point;
 
@@ -51,11 +51,13 @@ GLuint instanceVBO;
 GLuint pointVAO, gridVAO;
 GLuint gridVBO;
 
-const char* vertexShaderSource = 
+const char* vertexShaderSource =
     "#version 330 core\n"
     "layout (location = 0) in vec2 aPos;\n"
+    "layout (location = 1) in vec2 aOffset;\n"
     "void main() {\n"
-    "    gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0);\n"
+    "    gl_Position = vec4(aPos + aOffset, 0.0, 1.0);\n"
+    "    gl_PointSize = 2.0;\n"
     "}\0";
 
 const char* fragmentShaderSource = 
@@ -64,6 +66,21 @@ const char* fragmentShaderSource =
     "void main() {\n"
     "    FragColor = vec4(1.0, 0.0, 0.0, 1.0);\n"
     "}\0";
+
+void checkOpenGLState() {
+    GLint vao, arrayBuffer, elementArrayBuffer, program;
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &arrayBuffer);
+    glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &elementArrayBuffer);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+    
+    printf("OpenGL State:\n");
+    printf("VAO: %d\n", vao);
+    printf("Array Buffer: %d\n", arrayBuffer);
+    printf("Element Array Buffer: %d\n", elementArrayBuffer);
+    printf("Shader Program: %d\n", program);
+}
+
 
 bool initSDL()
 {
@@ -156,7 +173,7 @@ bool initOpenGL()
 
 	glBindVertexArray(pointVAO);
 	float point[] = {0.0f, 0.0f};
-	glPointSize(5.0f);
+	glPointSize(3.0f);
 	glGenBuffers(1, &vbo);
 	
 	glBindVertexArray(vao);
@@ -189,7 +206,7 @@ void updateInstanceData(QuadTree *qt, float **instanceData, int *dataSize, int *
 	for (int i = 0; i <qt->point_count; i++)
 	{
 		(*instanceData)[(*dataSize)++] = (qt->points[i]->x / _RELATIVE_WIDTH) * 2 - 1;
-		(*instanceData)[(*dataSize)++] = (qt->points[i]->y / _RELATIVE_WIDTH) * 2 - 1;
+		(*instanceData)[(*dataSize)++] = (qt->points[i]->y / _RELATIVE_HEIGHT) * 2 - 1;
 	}
 
 	if (qt->children[0] != NULL)
@@ -307,11 +324,20 @@ void collectQuadTreeData(QuadTree *qt)
 
 void renderQuadTreeData()
 {
+
+	glUseProgram(shaderProgram);
+	glBindVertexArray(pointVAO);
 	glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
 	glBufferData(GL_ARRAY_BUFFER, g_dataSize * sizeof(float), g_instanceData, GL_DYNAMIC_DRAW);
 
-	glBindVertexArray(pointVAO);
-	glUseProgram(shaderProgram);
+	glEnableVertexAttribArray(0);
+	glEnableVertexAttribArray(1);
+  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+  glVertexAttribDivisor(1, 1);
+
+	glDrawArraysInstanced(GL_POINTS, 0, 1, g_dataSize / 2);
+
 	glDrawArraysInstanced(GL_POINTS, 0, 1, g_dataSize / 2);
 
 	if (show_grid)
@@ -324,6 +350,11 @@ void renderQuadTreeData()
 		glUseProgram(shaderProgram);
 		glDrawArrays(GL_LINES, 0, g_gridSize / 2);
 	}
+	printf("Rendering %d points\n", g_dataSize / 2);
+	printf("First point data: (%f, %f)\n", g_instanceData[0], g_instanceData[1]);
+	glDisableVertexAttribArray(0);
+  glDisableVertexAttribArray(1);
+  glBindVertexArray(0);
 	glBindVertexArray(0);
 }
 
@@ -547,27 +578,48 @@ int main(int argc, char* args[])
 	}
 
 	QuadTree* root = createQuadTree(0,0, _WINDOW_WIDTH * _SCALE_FACTOR, _WINDOW_HEIGHT*_SCALE_FACTOR);
-	Point** allPoints = malloc(_AMOUNT_OF_BALLS * sizeof(Point*));
+	Point** allPoints = malloc(2 + _AMOUNT_OF_BALLS * sizeof(Point*));
 	int pointCount = 0;
 
 	Point *centralBody = (Point*)malloc(sizeof(Point));
-	centralBody->x = ( _WINDOW_WIDTH) * _SCALE_FACTOR /2 ;
-	centralBody->y = ( _WINDOW_HEIGHT) * _SCALE_FACTOR /2;
+	centralBody->x = ( (double)_WINDOW_WIDTH) * _SCALE_FACTOR /2;
+	centralBody->y = ( (double)_WINDOW_HEIGHT) * _SCALE_FACTOR /2 + 150;
 	centralBody->vx = 1000;
-	centralBody->vy = 0;
+	centralBody->vy = 200;
 	centralBody->mass = 1e10;
 	centralBody->fx = 0;
-	centralBody->fy = 0;
+	centralBody->r = 0.0f;
+	centralBody->g = 1.0f;
+	centralBody->b = 0.0f;  // Blue
+	centralBody->a = 1.0f;	centralBody->fy = 0;
 	insert(root, centralBody);
 	allPoints[pointCount++] = centralBody;
+
+	Point *centralBody2 = (Point*)malloc(sizeof(Point));
+	centralBody2->x = ( ((double)_WINDOW_WIDTH) * _SCALE_FACTOR /2) + 30;  
+	centralBody2->y = ( ((double)_WINDOW_HEIGHT) * _SCALE_FACTOR /2) - 150; 
+	centralBody2->vx = 0;
+	centralBody2->vy = 0;
+	centralBody2->mass = 1e10;
+	centralBody2->fx = 0;
+	centralBody2->fy = 0;
+	centralBody2->r = 0.0f;
+	centralBody2->g = 0.0f;
+	centralBody2->b = 1.0f;  // Blue
+	centralBody2->a = 1.0f;
+	insert(root, centralBody2);
+	allPoints[pointCount++] = centralBody2;
 	
 
 	for (int i = 0; i < _AMOUNT_OF_BALLS; ++i) {
+		printf("\nHELLO %i\n", i);
 		Point *p = (Point*)malloc(sizeof(Point));
 		double angle = ((double)rand() / RAND_MAX) * M_PI;
 		double radius = ((double)rand() / RAND_MAX) * _WINDOW_WIDTH * _SCALE_FACTOR /2;
-		p->x = centralBody->x + radius*cos(angle);
-		p->y = centralBody->y + radius*sin(angle);
+		Point* referenceBody = (i % 2 == 0) ? centralBody : centralBody2;
+
+		p->x = referenceBody->x + radius*cos(angle);
+		p->y = referenceBody->y + radius*sin(angle);
 
 		double speed = sqrt(_G*centralBody->mass/radius);
 		p->vx = -speed * sin(angle);
@@ -580,7 +632,8 @@ int main(int argc, char* args[])
 		insert(root, p);
 		allPoints[pointCount++] = p;
 	}
-	printQuadTreeInfo(root, 0);
+	//printQuadTreeInfo(root, 0);
+	printf("\nHELLO\n");
 
 	bool quit = false;
 	SDL_Event e;
@@ -600,9 +653,6 @@ int main(int argc, char* args[])
 		} 
 
 		clearQuadTree(root);
-    printf("QuadTree clearing and reinserting:\n");
-    printQuadTreeInfo(root, 0);
-		printf("After clear: %d points\n", root->point_count);
 
 		for (int i = 0; i < pointCount; ++i) {
 			insert(root, allPoints[i]);
@@ -619,8 +669,8 @@ int main(int argc, char* args[])
 
 
 
-    printf("QuadTree structure before drawing:\n");
-    printQuadTreeInfo(root, 0);
+    //printf("QuadTree structure before drawing:\n");
+    //printQuadTreeInfo(root, 0);
 		
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
@@ -628,6 +678,7 @@ int main(int argc, char* args[])
 
 		drawQuadTree(root);
 		SDL_GL_SwapWindow(window);
+		checkOpenGLState();
 
 		//static int iterations = 0;
 		//printf("ITERATIONS:\t%i\n", iterations);
