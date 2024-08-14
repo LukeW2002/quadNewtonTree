@@ -8,7 +8,7 @@
 #include <omp.h>
 #include <math.h>
 
-#define _MAX_POINTS 2
+#define _MAX_POINTS 10
 #define _TOTAL_MEMORY_POINTS 10000
 #define _WINDOW_WIDTH 800
 #define _WINDOW_HEIGHT 600
@@ -46,7 +46,10 @@ typedef struct QuadTree {
 SDL_Window *window = NULL;
 bool show_grid = false;
 SDL_GLContext glContext = NULL;
-GLuint shaderProgram, vbo, vao;
+GLuint shaderProgram, vao, vbo;
+GLuint instanceVBO;
+GLuint pointVAO, gridVAO;
+GLuint gridVBO;
 
 const char* vertexShaderSource = 
     "#version 330 core\n"
@@ -145,27 +148,59 @@ bool initOpenGL()
 	glDeleteShader(vertexShader);
 	glDeleteShader(fragmentShader);
 
-	float vertices[] =
-	{
-		0.0f, 0.0f
-	};
-
 	glGenVertexArrays(1, &vao);
+	glGenBuffers(1, &instanceVBO);
+
+	glGenVertexArrays(1, &pointVAO);
+	glGenVertexArrays(1, &gridVAO);
+
+	glBindVertexArray(pointVAO);
+	float point[] = {0.0f, 0.0f};
+	glPointSize(5.0f);
 	glGenBuffers(1, &vbo);
-
+	
 	glBindVertexArray(vao);
-
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
+	glBufferData(GL_ARRAY_BUFFER, sizeof(point), point, GL_STATIC_DRAW);
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2*sizeof(float), (void*)0);
 	glEnableVertexAttribArray(0);
 
-	glBindBuffer(GL_ARRAY_BUFFER,0);
+	glBindBuffer(GL_ARRAY_BUFFER,instanceVBO);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 2*sizeof(float), (void*)0);
+	glEnableVertexAttribArray(1);
+	glVertexAttribDivisor(1,1);
+
+	glBindVertexArray(gridVAO);
+	glGenBuffers(1, &gridVBO);
+	
 	glBindVertexArray(0);
 
 	return true;
 }
+
+void updateInstanceData(QuadTree *qt, float **instanceData, int *dataSize, int *capacity)
+{
+	if (qt->point_count + *dataSize > *capacity)
+	{
+		*capacity = (*capacity == 0) ? 1024 : *capacity * 2;
+		*instanceData = realloc(*instanceData, *capacity * 2 * sizeof(float));
+	}
+
+	for (int i = 0; i <qt->point_count; i++)
+	{
+		(*instanceData)[(*dataSize)++] = (qt->points[i]->x / _RELATIVE_WIDTH) * 2 - 1;
+		(*instanceData)[(*dataSize)++] = (qt->points[i]->y / _RELATIVE_WIDTH) * 2 - 1;
+	}
+
+	if (qt->children[0] != NULL)
+	{
+		for (int i = 0; i < 4; i++)
+		{
+			updateInstanceData(qt->children[i], instanceData, dataSize, capacity);
+		}
+	}
+}
+	
 
 void cleanup()
 {
@@ -176,6 +211,7 @@ void cleanup()
 	SDL_DestroyWindow(window);
 	SDL_Quit();
 }
+
 
 void printQuadTreeInfo(QuadTree *qt, int depth) {
     for (int i = 0; i < depth; i++) printf("  ");
@@ -213,40 +249,91 @@ void handleKeyPress(SDL_KeyboardEvent *event)
 	}
 }
 
-void drawQuadTree(QuadTree *qt)
+void collectGridLines(QuadTree *qt, float **lines, int *size, int *capacity)
 {
-	if (show_grid)
+	if (*size + 16 > *capacity)
 	{
-		//SDL_SetRenderDrawColor(renderer, 255,255,255,255);
-		//SDL_Rect rect = {(int)qt->x / _SCALE_FACTOR, 
-		//								 (int)qt->y / _SCALE_FACTOR, 
-		//								 (int)qt->width / _SCALE_FACTOR,
-		//								 (int)qt->height/ _SCALE_FACTOR};
-		//SDL_RenderDrawRect(renderer, &rect);
+		*capacity = (*capacity == 0) ? 1024 : *capacity * 2;
+		*lines = realloc(*lines, *capacity * sizeof(float));
 	}
+	float left = (qt->x / _RELATIVE_WIDTH)* 2 -1;
+	float right = ((qt->x + qt->width) / _RELATIVE_WIDTH)* 2 -1;
+	float top = (qt->y / _RELATIVE_WIDTH)* 2 -1;
+	float bottom = ((qt->y + qt->height) / _RELATIVE_WIDTH)* 2 -1;
+	
+	(*lines)[(*size)++] = left;  (*lines)[(*size)++] = top;
+  (*lines)[(*size)++] = right; (*lines)[(*size)++] = top;
+  (*lines)[(*size)++] = right; (*lines)[(*size)++] = top;
+  (*lines)[(*size)++] = right; (*lines)[(*size)++] = bottom;
+  (*lines)[(*size)++] = right; (*lines)[(*size)++] = bottom;
+  (*lines)[(*size)++] = left;  (*lines)[(*size)++] = bottom;
+  (*lines)[(*size)++] = left;  (*lines)[(*size)++] = bottom;
+  (*lines)[(*size)++] = left;  (*lines)[(*size)++] = top;
 
-	glUseProgram(shaderProgram);
-	glBindVertexArray(vao);
-
-	for (int i = 0; i < qt->point_count; i++)
+	if (qt->children[0] != NULL)
 	{
-		float x = (qt->points[i]->x / _RELATIVE_WIDTH)*2 - 1;
-		float y = (qt->points[i]->y / _RELATIVE_HEIGHT)*2 - 1;
-		float point[] = {x, y};
-		glBindBuffer(GL_ARRAY_BUFFER, vbo);
-		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(point), point);
+		for (int i = 0; i < 4; i++)
+		{
+			collectGridLines(qt->children[i], lines, size, capacity);
+		}
+	}
+}
 
-		glDrawArrays(GL_POINTS, 0, 1);
+float* g_instanceData = NULL;
+int g_dataSize = 0;
+int g_capacity = 0;
+float* g_gridLines = NULL;
+int g_gridSize = 0;
+int g_gridCapacity = 0;
+
+void collectQuadTreeData(QuadTree *qt)
+{
+	updateInstanceData(qt, &g_instanceData, &g_dataSize, &g_capacity);
+
+	if(show_grid)
+	{
+		collectGridLines(qt, &g_gridLines, &g_gridSize, &g_gridCapacity);
 	}
 
 	if (qt->children[0] != NULL)
 	{
 		for (int i = 0; i < 4; i++)
 		{
-			drawQuadTree(qt->children[i]);
+			collectQuadTreeData(qt->children[i]);
 		}
 	}
+	
+}
 
+void renderQuadTreeData()
+{
+	glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+	glBufferData(GL_ARRAY_BUFFER, g_dataSize * sizeof(float), g_instanceData, GL_DYNAMIC_DRAW);
+
+	glBindVertexArray(pointVAO);
+	glUseProgram(shaderProgram);
+	glDrawArraysInstanced(GL_POINTS, 0, 1, g_dataSize / 2);
+
+	if (show_grid)
+	{
+		glBindVertexArray(gridVAO);
+		glBindBuffer(GL_ARRAY_BUFFER, gridVBO);
+		glBufferData(GL_ARRAY_BUFFER, g_gridSize * sizeof(float), g_gridLines, GL_DYNAMIC_DRAW);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2* sizeof(float), (void*)0);
+		glEnableVertexAttribArray(0);
+		glUseProgram(shaderProgram);
+		glDrawArrays(GL_LINES, 0, g_gridSize / 2);
+	}
+	glBindVertexArray(0);
+}
+
+void drawQuadTree(QuadTree *qt)
+{
+	g_dataSize = 0;
+	g_gridSize = 0;
+
+	collectQuadTreeData(qt);
+	renderQuadTreeData();
 }
 
 QuadTree * createQuadTree( double x, double y, double width, double height)
@@ -531,12 +618,16 @@ int main(int argc, char* args[])
 		}
 
 
+
     printf("QuadTree structure before drawing:\n");
     printQuadTreeInfo(root, 0);
 		
+		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
 
 
 		drawQuadTree(root);
+		SDL_GL_SwapWindow(window);
 
 		//static int iterations = 0;
 		//printf("ITERATIONS:\t%i\n", iterations);
