@@ -10,8 +10,8 @@
 
 #define _MAX_POINTS 20
 #define _TOTAL_MEMORY_POINTS 10000
-#define _WINDOW_WIDTH 1376
-#define _WINDOW_HEIGHT 900
+#define _WINDOW_WIDTH 1366
+#define _WINDOW_HEIGHT 768
 #define _G 0.01
 #define _SCALE_FACTOR 1
 #define _TIME_STEP 0.0001
@@ -509,8 +509,8 @@ void calcForce(Point *p, QuadTree *qt, double theta)
 		return;
 	}
 
-	double dx= qt->cmX - p->x;
-	double dy= qt->cmY - p->y;
+	double dx = qt->cmX - p->x;
+	double dy = qt->cmY - p->y;
 
 	double distance = sqrt(dx * dx + dy * dy + _SOFTENING * _SOFTENING);
 	if (((qt->width / distance < theta) || qt->children[0] == NULL))
@@ -583,7 +583,7 @@ int main(int argc, char* args[])
 
 	Point *centralBody = (Point*)malloc(sizeof(Point));
 	centralBody->x = ( (double)_WINDOW_WIDTH) * _SCALE_FACTOR /2;
-	centralBody->y = ( (double)_WINDOW_HEIGHT) * _SCALE_FACTOR /2 + 150;
+	centralBody->y = ( (double)_WINDOW_HEIGHT) * _SCALE_FACTOR /2;
 	centralBody->vx = 1000;
 	centralBody->vy = 200;
 	centralBody->mass = 1e10;
@@ -618,12 +618,19 @@ int main(int argc, char* args[])
 		double radius = ((double)rand() / RAND_MAX) * _WINDOW_WIDTH * _SCALE_FACTOR /2;
 		Point* referenceBody = (i % 2 == 0) ? centralBody : centralBody2;
 
+		//p->x = centralBody->x + radius*cos(angle);
+		//p->y = centralBody->y + radius*sin(angle);
+
 		p->x = referenceBody->x + radius*cos(angle);
 		p->y = referenceBody->y + radius*sin(angle);
 
 		double speed = sqrt(_G*centralBody->mass/radius);
 		p->vx = -speed * sin(angle);
 		p->vy = speed * cos(angle);
+		p->r = 0.0f;
+		p->g = 1.0f;
+		p->b = 0.0f;  // Blue
+		p->a = 1.0f;	
 
 		p->mass = (rand() % 100 + 1)*1e3;
 		p->fx = 0;
