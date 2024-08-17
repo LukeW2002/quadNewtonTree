@@ -1,8 +1,8 @@
 # Compiler
 CC = gcc
 
-# Compiler flags-fsanitize=address 
-CFLAGS =   -fopenmp -Wall -Wextra -g -I./include
+# Compiler flags
+CFLAGS =   -DNO_LOGGING -fopenmp -Wall -Wextra -g -I./include
 
 # Linker flags
 LDFLAGS = -lSDL2 -lGL -lGLEW -lm -fopenmp 

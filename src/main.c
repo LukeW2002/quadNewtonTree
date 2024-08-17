@@ -10,7 +10,7 @@
 
 int main(int argc, char* args[])
 {
-	init_logger("Debug.txt");
+	init_logger("Debug.log");
 	set_log_level(DEBUG);
 
 	LOG_INFO("Starting Program");
